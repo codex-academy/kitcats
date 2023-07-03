@@ -1,23 +1,21 @@
-const express = require('express');
-const exphbs = require('express-handlebars');
-const bodyParser = require('body-parser');
-const session = require('express-session');
-const pg = require("pg");
-const Pool = pg.Pool;
+import  express  from 'express';
+import { engine } from 'express-handlebars';
+import bodyParser from 'body-parser';
+import session from 'express-session';
+import pgPromise from 'pg-promise';
+
+const pgp = pgPromise();
 
 // should we use a SSL connection
 let useSSL = false;
 let local = process.env.LOCAL || false;
-if (process.env.DATABASE_URL && !local){
+if (process.env.DATABASE_URL && !local) {
     useSSL = true;
 }
 // which db connection to use
 const connectionString = process.env.DATABASE_URL || 'postgresql://coder:pg123@localhost:5432/kitcats';
 
-const pool = new Pool({
-    connectionString,
-    ssl : useSSL
-  });
+const db = pgp(connectionString);
 
 const app = express();
 app.use(session({
@@ -26,8 +24,10 @@ app.use(session({
     saveUninitialized: true
 }));
 
-app.engine('handlebars', exphbs({ defaultLayout: 'main' }));
+app.engine('handlebars', engine());
 app.set('view engine', 'handlebars');
+app.set('views', './views');
+
 
 app.use(express.static('public'));
 
@@ -38,30 +38,30 @@ app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
 
 
-app.get('/add', function(req, res) {
+app.get('/add', function (req, res) {
     res.render('add');
 })
 
-app.post('/add', async function(req, res) {
+app.post('/add', async function (req, res) {
     let catName = req.body.cat_name;
     if (catName && catName !== '') {
-        await pool.query('insert into cats (cat_name, spotted_count) values ($1, $2)' , [catName, 1]);    
+        await db.none('insert into cats (cat_name, spotted_count) values ($1, $2)', [catName, 1]);
     }
 
     res.redirect('/');
 });
 
-app.post('/spotted/:cat_id', async function(req, res) {
+app.post('/spotted/:cat_id', async function (req, res) {
     let catId = req.params.cat_id;
 
     // get the current spottedCount from the database
-    let results = await pool.query('select spotted_count from cats where id = $1', [catId]);
-    let cat = results.rows[0];
+    let results = await db.oneOrNone('select spotted_count from cats where id = $1', [catId]);
+    let cat = results;
     let spottedCount = cat.spotted_count;
     spottedCount++;
-    
+
     // put the updated value back into the db
-    await pool.query('update cats set spotted_count = $1 where id = $2', 
+    await db.none('update cats set spotted_count = $1 where id = $2',
         [spottedCount, catId]);
 
     res.redirect('/');
@@ -69,8 +69,8 @@ app.post('/spotted/:cat_id', async function(req, res) {
 
 app.get('/', async function (req, res) {
 
-    let results = await pool.query('select * from cats order by spotted_count desc');    
-    let cats = results.rows;
+    let results = await db.manyOrNone('select * from cats order by spotted_count desc');
+    let cats = results;
     res.render('home', { cats });
 });
 
