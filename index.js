@@ -1,8 +1,10 @@
-import  express  from 'express';
+import express from 'express';
 import { engine } from 'express-handlebars';
 import bodyParser from 'body-parser';
 import session from 'express-session';
 import pgPromise from 'pg-promise';
+import query from './service/query.js';
+
 
 const pgp = pgPromise();
 
@@ -13,9 +15,13 @@ if (process.env.DATABASE_URL && !local) {
     useSSL = true;
 }
 // which db connection to use
-const connectionString = process.env.DATABASE_URL || 'postgresql://coder:pg123@localhost:5432/kitcats';
+const connectionString = process.env.DATABASE_URL || 'postgres://kat_spotter_user:xJXLsHuVOjgLdFVkmQwzy2EfYAEzNc8S@dpg-cjhibkj6fquc73c7fs9g-a/kat_spotter?ssl=true';
 
-const db = pgp(connectionString);
+// console.log(connectionString);
+
+const database = pgp(connectionString);
+
+const data = query(database);
 
 const app = express();
 app.use(session({
@@ -45,7 +51,7 @@ app.get('/add', function (req, res) {
 app.post('/add', async function (req, res) {
     let catName = req.body.cat_name;
     if (catName && catName !== '') {
-        await db.none('insert into cats (cat_name, spotted_count) values ($1, $2)', [catName, 1]);
+        await data.insert(catName)
     }
 
     res.redirect('/');
@@ -53,24 +59,21 @@ app.post('/add', async function (req, res) {
 
 app.post('/spotted/:cat_id', async function (req, res) {
     let catId = req.params.cat_id;
-
+    // console.log(catId);
     // get the current spottedCount from the database
-    let results = await db.oneOrNone('select spotted_count from cats where id = $1', [catId]);
+    let results = await data.getCat(catId)
     let cat = results;
     let spottedCount = cat.spotted_count;
     spottedCount++;
 
     // put the updated value back into the db
-    await db.none('update cats set spotted_count = $1 where id = $2',
-        [spottedCount, catId]);
-
+    await data.update(catId);
     res.redirect('/');
 });
 
 app.get('/', async function (req, res) {
-
-    let results = await db.manyOrNone('select * from cats order by spotted_count desc');
-    let cats = results;
+    let cats = await data.getAllCats();
+    // console.log(cats);
     res.render('home', { cats });
 });
 
@@ -79,3 +82,5 @@ const PORT = process.env.PORT || 3010;
 app.listen(PORT, function () {
     console.log("started on: ", this.address().port);
 });
+
+
